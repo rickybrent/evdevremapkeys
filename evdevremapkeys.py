@@ -74,9 +74,26 @@ def load_config(config_override):
         config = yaml.safe_load(fd)
         for device in config['devices']:
             device['remappings'] = resolve_ecodes(device['remappings'])
+    config['path'] = conf_path
 
     return config
 
+""" Reload config and update all device mappings. """
+def reload_config(config):
+    update_config = load_config(config['path'])
+    update_map = {}
+    for device in update_config['devices']:
+        name = device.get('input_name', None);
+        phys = device.get('input_phys', None);
+        fn = device.get('input_fn', None);
+        update_map[(name, phys, fn)] = device['remappings'];
+    for device in config['devices']:
+        name = device.get('input_name', None);
+        phys = device.get('input_phys', None);
+        fn = device.get('input_fn', None);
+        if (name, phys, fn) in update_map:
+            device['remappings'].clear()
+            device['remappings'].update(update_map[(name, phys, fn)])
 
 def resolve_ecodes(by_name):
     by_id = {}
@@ -136,6 +153,10 @@ def shutdown(loop):
 
 def run_loop(args):
     config = load_config(args.config_file)
+    run_loop_with(config)
+
+
+def run_loop_with(config):
     for device in config['devices']:
         register_device(device)
 
@@ -143,6 +164,8 @@ def run_loop(args):
     loop.add_signal_handler(signal.SIGTERM,
                             functools.partial(asyncio.ensure_future,
                                               shutdown(loop)))
+    loop.add_signal_handler(signal.SIGUSR1, functools.partial(reload_config, config))
+    signal.siginterrupt(signal.SIGUSR1, False)
 
     try:
         loop.run_forever()
@@ -173,4 +196,4 @@ if __name__ == '__main__':
         with daemon.DaemonContext():
             run_loop(args)
     else:
-        run_loop(args)
+          run_loop(args)
